@@ -241,8 +241,8 @@ export const seedPeople = [
 export const seedGallery = [
   {
     id: 'trip-uno',
-    title: 'Arvind Sir Explaining How to Play UNO',
-    caption: 'Arvind Sir explaining the rules of UNO to the group as the train heads into the night.',
+    title: 'Arvind Sir Learning How to Play UNO',
+    caption: 'Arvind Sir learning how to play UNO with the group as the train heads into the night.',
     place: 'Overnight Train toward Chandigarh',
     tag: 'TRAIN MOMENTS',
     image: '/images/arvid_sir_pleaning_how_to_play_uno_in_train.png',
