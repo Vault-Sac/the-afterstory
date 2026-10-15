@@ -45,9 +45,16 @@ export async function getGalleryMedia({ destinationId, dayId, limit = 100 } = {}
     if (error || !data || data.length === 0) {
       let fallback = seedGallery
       if (destinationId) fallback = fallback.filter(m => m.destination_id === destinationId)
+      if (dayId) fallback = fallback.filter(m => m.journey_day_id === dayId)
       return { data: (data && data.length > 0) ? data : fallback, error }
     }
-    return { data, error: null }
+    // Include featured trip photos from seedGallery if not present in remote database
+    const remoteIds = new Set(data.map(d => d.id))
+    const featuredTripPhotos = seedGallery.filter(s => s.id.startsWith('trip-') && !remoteIds.has(s.id))
+    let combined = [...featuredTripPhotos, ...data]
+    if (destinationId) combined = combined.filter(m => m.destination_id === destinationId)
+    if (dayId) combined = combined.filter(m => m.journey_day_id === dayId)
+    return { data: combined.slice(0, limit), error: null }
   } catch (err) {
     return { data: seedGallery, error: err }
   }
@@ -66,7 +73,9 @@ export async function getAllMediaAdmin() {
     if (error || !data || data.length === 0) {
       return { data: (data && data.length > 0) ? data : seedGallery, error }
     }
-    return { data, error: null }
+    const remoteIds = new Set(data.map(d => d.id))
+    const featuredTripPhotos = seedGallery.filter(s => s.id.startsWith('trip-') && !remoteIds.has(s.id))
+    return { data: [...featuredTripPhotos, ...data], error: null }
   } catch (err) {
     return { data: seedGallery, error: err }
   }
