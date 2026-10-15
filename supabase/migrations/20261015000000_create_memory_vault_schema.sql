@@ -1,8 +1,7 @@
 -- ==============================================================================
--- THE AFTERSTORY / THE MEMORY VAULT — SUPABASE SCHEMA MIGRATION
+-- THE AFTERSTORY / THE MEMORY VAULT — PRODUCTION SCHEMA & SECURITY MIGRATION
 -- Migration Version: 20261015000000
--- Description: Core schema, tables, relationships, RLS policies, storage bucket,
---              and idempotent initial seed data.
+-- Security Model: Explicit Role-Based Authorization, RLS, Storage Hardening
 -- ==============================================================================
 
 -- Enable UUID extension if not already enabled
@@ -141,11 +140,22 @@ CREATE TABLE IF NOT EXISTS public.memory_media (
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.guestbook_entries (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    display_name TEXT NOT NULL,
+    display_name TEXT NOT NULL CHECK (char_length(display_name) <= 80),
     message TEXT NOT NULL CHECK (char_length(message) >= 2 AND char_length(message) <= 2000),
     location TEXT,
-    status TEXT DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'hidden')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'hidden')),
     created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ------------------------------------------------------------------------------
+-- 10. TABLE: admin_users (Explicit Administrator Registry)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.admin_users (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'superadmin')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by UUID REFERENCES auth.users(id)
 );
 
 -- ------------------------------------------------------------------------------
@@ -157,6 +167,68 @@ CREATE INDEX IF NOT EXISTS idx_journey_days_order ON public.journey_days(display
 CREATE INDEX IF NOT EXISTS idx_media_dest ON public.media(destination_id);
 CREATE INDEX IF NOT EXISTS idx_memories_status ON public.memories(moderation_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_people_order ON public.people(display_order);
+CREATE INDEX IF NOT EXISTS idx_admin_users_email ON public.admin_users(email);
+
+-- ==============================================================================
+-- AUTHORIZATION FUNCTIONS (SECURITY DEFINER)
+-- ==============================================================================
+
+-- Secure function to check whether a user possesses active administrator privileges.
+-- search_path is strictly pinned to public, auth to eliminate path hijacking.
+CREATE OR REPLACE FUNCTION public.is_admin(user_uuid UUID DEFAULT auth.uid())
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF user_uuid IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1
+        FROM public.admin_users
+        WHERE user_id = user_uuid
+          AND role IN ('admin', 'superadmin')
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.is_admin(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin(UUID) TO authenticated, anon;
+
+-- Helper function to grant admin privileges to an existing auth user by email
+CREATE OR REPLACE FUNCTION public.add_admin_by_email(admin_email TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    target_id UUID;
+    norm_email TEXT := lower(trim(admin_email));
+BEGIN
+    -- Only existing administrators or postgres service role can call this
+    IF auth.uid() IS NOT NULL AND NOT public.is_admin(auth.uid()) THEN
+        RAISE EXCEPTION 'Unauthorized: only verified administrators can register new admins.';
+    END IF;
+
+    SELECT id INTO target_id FROM auth.users WHERE lower(email) = norm_email;
+    IF target_id IS NULL THEN
+        RAISE EXCEPTION 'User % does not exist in auth.users. Please create the user first in Supabase Auth.', norm_email;
+    END IF;
+
+    INSERT INTO public.admin_users (user_id, email, role, created_by)
+    VALUES (target_id, norm_email, 'admin', auth.uid())
+    ON CONFLICT (user_id) DO UPDATE SET role = 'admin';
+
+    RETURN 'Success: Admin access granted to ' || norm_email;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.add_admin_by_email(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.add_admin_by_email(TEXT) TO authenticated;
 
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -171,102 +243,145 @@ ALTER TABLE public.people ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.memory_media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guestbook_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 
--- 1. site_settings
+-- 1. admin_users RLS
+-- Users can inspect their own role, or admins can view all admin records.
+-- Ordinary users CANNOT insert, update, or delete from this table.
+DROP POLICY IF EXISTS "Users view own admin record or admins view all" ON public.admin_users;
+CREATE POLICY "Users view own admin record or admins view all" ON public.admin_users
+    FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "Admins can manage admin users" ON public.admin_users;
+CREATE POLICY "Admins can manage admin users" ON public.admin_users
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
+
+-- 2. site_settings RLS
 DROP POLICY IF EXISTS "Public can view site settings" ON public.site_settings;
 CREATE POLICY "Public can view site settings" ON public.site_settings
     FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Admins can manage site settings" ON public.site_settings;
 CREATE POLICY "Admins can manage site settings" ON public.site_settings
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 2. destinations
+-- 3. destinations RLS
+-- Anonymous/non-admin users see ONLY published destinations.
+-- Only verified admins can view drafts or perform inserts/updates/deletes.
 DROP POLICY IF EXISTS "Public can view published destinations" ON public.destinations;
 CREATE POLICY "Public can view published destinations" ON public.destinations
-    FOR SELECT USING (status = 'published' OR auth.role() = 'authenticated');
+    FOR SELECT USING (status = 'published' OR public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "Admins can manage destinations" ON public.destinations;
 CREATE POLICY "Admins can manage destinations" ON public.destinations
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 3. journey_days
+-- 4. journey_days RLS
 DROP POLICY IF EXISTS "Public can view published journey days" ON public.journey_days;
 CREATE POLICY "Public can view published journey days" ON public.journey_days
-    FOR SELECT USING (status = 'published' OR auth.role() = 'authenticated');
+    FOR SELECT USING (status = 'published' OR public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "Admins can manage journey days" ON public.journey_days;
 CREATE POLICY "Admins can manage journey days" ON public.journey_days
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 4. activities
+-- 5. activities RLS
 DROP POLICY IF EXISTS "Public can view activities" ON public.activities;
 CREATE POLICY "Public can view activities" ON public.activities
     FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Admins can manage activities" ON public.activities;
 CREATE POLICY "Admins can manage activities" ON public.activities
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 5. media
+-- 6. media RLS
 DROP POLICY IF EXISTS "Public can view published media" ON public.media;
 CREATE POLICY "Public can view published media" ON public.media
-    FOR SELECT USING (publication_status = 'published' OR auth.role() = 'authenticated');
+    FOR SELECT USING (publication_status = 'published' OR public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "Admins can manage media" ON public.media;
 CREATE POLICY "Admins can manage media" ON public.media
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 6. people
+-- 7. people RLS
 DROP POLICY IF EXISTS "Public can view published people" ON public.people;
 CREATE POLICY "Public can view published people" ON public.people
-    FOR SELECT USING (status = 'published' OR auth.role() = 'authenticated');
+    FOR SELECT USING (status = 'published' OR public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "Admins can manage people" ON public.people;
 CREATE POLICY "Admins can manage people" ON public.people
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 7. memories
+-- 8. memories RLS
+-- Unapproved/pending memories are strictly hidden from public and non-admin users.
 DROP POLICY IF EXISTS "Public can view approved memories" ON public.memories;
 CREATE POLICY "Public can view approved memories" ON public.memories
-    FOR SELECT USING (moderation_status = 'approved' OR auth.role() = 'authenticated');
+    FOR SELECT USING (moderation_status = 'approved' OR public.is_admin(auth.uid()));
 
+-- Non-admin visitors can only insert memories as 'pending' with approved_at NULL and length limits.
 DROP POLICY IF EXISTS "Public can submit pending memories" ON public.memories;
 CREATE POLICY "Public can submit pending memories" ON public.memories
     FOR INSERT WITH CHECK (
         moderation_status = 'pending' AND
+        approved_at IS NULL AND
         char_length(body) >= 5 AND
-        char_length(body) <= 5000
+        char_length(body) <= 5000 AND
+        char_length(display_name) <= 80 AND
+        (title IS NULL OR char_length(title) <= 120)
     );
 
+-- Only verified admins can approve, reject, edit, or delete memories.
 DROP POLICY IF EXISTS "Admins can manage memories" ON public.memories;
 CREATE POLICY "Admins can manage memories" ON public.memories
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 8. memory_media
+-- 9. memory_media RLS
 DROP POLICY IF EXISTS "Public can view memory media links" ON public.memory_media;
 CREATE POLICY "Public can view memory media links" ON public.memory_media
     FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Admins can manage memory media links" ON public.memory_media;
 CREATE POLICY "Admins can manage memory media links" ON public.memory_media
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
--- 9. guestbook_entries
+-- 10. guestbook_entries RLS
 DROP POLICY IF EXISTS "Public can view approved guestbook entries" ON public.guestbook_entries;
 CREATE POLICY "Public can view approved guestbook entries" ON public.guestbook_entries
-    FOR SELECT USING (status = 'approved' OR auth.role() = 'authenticated');
+    FOR SELECT USING (status = 'approved' OR public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "Public can submit guestbook entries" ON public.guestbook_entries;
 CREATE POLICY "Public can submit guestbook entries" ON public.guestbook_entries
     FOR INSERT WITH CHECK (
+        status = 'pending' AND
         char_length(message) >= 2 AND
-        char_length(message) <= 2000
+        char_length(message) <= 2000 AND
+        char_length(display_name) <= 80
     );
 
 DROP POLICY IF EXISTS "Admins can manage guestbook entries" ON public.guestbook_entries;
 CREATE POLICY "Admins can manage guestbook entries" ON public.guestbook_entries
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    FOR ALL TO authenticated
+    USING (public.is_admin(auth.uid()))
+    WITH CHECK (public.is_admin(auth.uid()));
 
 -- ==============================================================================
 -- STORAGE BUCKET CONFIGURATION & POLICIES
@@ -282,21 +397,34 @@ DROP POLICY IF EXISTS "Public can view gallery objects" ON storage.objects;
 CREATE POLICY "Public can view gallery objects" ON storage.objects
     FOR SELECT USING (bucket_id = 'gallery');
 
+-- Strictly require public.is_admin(auth.uid()) for uploading, updating, and deleting gallery objects
 DROP POLICY IF EXISTS "Admins can upload gallery objects" ON storage.objects;
 CREATE POLICY "Admins can upload gallery objects" ON storage.objects
     FOR INSERT TO authenticated
-    WITH CHECK (bucket_id = 'gallery');
+    WITH CHECK (
+        bucket_id = 'gallery' AND
+        public.is_admin(auth.uid())
+    );
 
 DROP POLICY IF EXISTS "Admins can update gallery objects" ON storage.objects;
 CREATE POLICY "Admins can update gallery objects" ON storage.objects
     FOR UPDATE TO authenticated
-    USING (bucket_id = 'gallery')
-    WITH CHECK (bucket_id = 'gallery');
+    USING (
+        bucket_id = 'gallery' AND
+        public.is_admin(auth.uid())
+    )
+    WITH CHECK (
+        bucket_id = 'gallery' AND
+        public.is_admin(auth.uid())
+    );
 
 DROP POLICY IF EXISTS "Admins can delete gallery objects" ON storage.objects;
 CREATE POLICY "Admins can delete gallery objects" ON storage.objects
     FOR DELETE TO authenticated
-    USING (bucket_id = 'gallery');
+    USING (
+        bucket_id = 'gallery' AND
+        public.is_admin(auth.uid())
+    );
 
 -- ==============================================================================
 -- IDEMPOTENT INITIAL SEED DATA
@@ -304,16 +432,16 @@ CREATE POLICY "Admins can delete gallery objects" ON storage.objects
 
 -- Site settings
 INSERT INTO public.site_settings (setting_key, setting_value) VALUES
-    ('site_title', 'THE MEMORY VAULT'),
+    ('site_title', 'THE AFTERSTORY'),
     ('site_edition', 'OCTOBER ''26'),
-    ('site_tagline', 'One journey. Many perspectives. A lifetime of memories.'),
+    ('site_tagline', 'Some journeys end. Their stories don''t.'),
     ('hero_title', 'Not just a trip.'),
     ('hero_subtitle', 'A piece of us.'),
     ('hero_description', 'Six days across changing landscapes, familiar voices, and moments we don''t want time to take away. This is where we keep them.'),
     ('route_summary', 'VARANASI — SHIMLA — CHANDIGARH'),
     ('trip_dates', '15 — 20 OCTOBER 2026'),
     ('footer_note', 'Made of moments, kept with care.'),
-    ('about_text', 'The Memory Vault is a private digital archive for the October 2026 group journey from Varanasi through Shimla and Chandigarh.')
+    ('about_text', 'The Afterstory is a private digital archive for the October 2026 group journey from Varanasi through Shimla and Chandigarh.')
 ON CONFLICT (setting_key) DO NOTHING;
 
 -- Destinations

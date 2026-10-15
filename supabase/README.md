@@ -1,59 +1,68 @@
-# THE AFTERSTORY — Supabase Setup & Architecture Guide
+# THE AFTERSTORY — Supabase Security & Architecture Guide
 
-## Overview
-This directory contains the database schema, security policies, storage configuration, and seed data for **THE AFTERSTORY** trip memory vault.
+## Security Architecture Overview
 
-## How to Apply the Database Schema
-
-### Method 1: Using the Supabase Dashboard SQL Editor (Recommended)
-1. Go to your [Supabase Dashboard](https://supabase.com/dashboard).
-2. Select your project.
-3. In the left navigation, click **SQL Editor**.
-4. Click **New Query**.
-5. Copy the contents of [`migrations/20261015000000_create_memory_vault_schema.sql`](./migrations/20261015000000_create_memory_vault_schema.sql) and paste into the editor.
-6. Click **Run** (or `Ctrl+Enter` / `Cmd+Enter`).
-7. You should see `Success. No rows returned`. All tables, indexes, RLS policies, storage bucket `gallery`, and initial itinerary records are now created!
-
-### Method 2: Using the Supabase CLI
-```bash
-supabase link --project-ref your-project-ref
-supabase db push
-```
+This project uses an **explicit, database-verified role authorization system**:
+- Simply being signed in (`authenticated`) **never** grants administrator rights.
+- An authenticated user must have an active record in `public.admin_users` verified via the `SECURITY DEFINER` function `public.is_admin(auth.uid())`.
+- Storage uploads, updates, and deletes are restricted to verified administrators.
+- Public visitors cannot read draft destinations, unpublished media, or unapproved memories.
+- Public visitors can only submit memories as `pending` (with strict length limits and `approved_at = NULL`).
 
 ---
 
-## Setting Up an Admin User
+## 1. How to Apply the Database Schema
 
-To access the protected CMS dashboard at `/admin`:
+1. Go to your [Supabase Dashboard](https://supabase.com/dashboard).
+2. Select your project and navigate to **SQL Editor** in the left sidebar.
+3. Open [`migrations/20261015000000_create_memory_vault_schema.sql`](./migrations/20261015000000_create_memory_vault_schema.sql), copy its entire content, and paste it into the SQL Editor.
+4. Click **Run**.
+5. All 10 tables (including `admin_users`), `is_admin()` security function, RLS policies, and the `gallery` storage bucket will be established.
 
+---
+
+## 2. Registering an Administrator (Required for CMS Access)
+
+Because administrator rights are explicitly controlled, follow these two quick steps to set up your admin account:
+
+### Step 1: Create the User in Supabase Auth
 1. In your Supabase Dashboard, go to **Authentication** → **Users**.
 2. Click **Add User** → **Create User**.
-3. Enter your admin email and a secure password.
-4. Check **Auto Confirm User** (so you can sign in immediately without an email confirmation roundtrip).
-5. Open the website, navigate to `/admin/login`, and sign in with the email and password you just created.
+3. Enter your email (e.g. `yourname@example.com`) and a strong password.
+4. Check **Auto Confirm User** and click **Create User**.
+
+### Step 2: Grant Admin Rights in `admin_users`
+In your Supabase **SQL Editor**, run either:
+
+**Option A (Using the built-in helper function):**
+```sql
+SELECT public.add_admin_by_email('yourname@example.com');
+```
+
+**Option B (Direct SQL insert):**
+```sql
+INSERT INTO public.admin_users (user_id, email, role)
+SELECT id, email, 'admin'
+FROM auth.users
+WHERE lower(email) = 'yourname@example.com'
+ON CONFLICT (user_id) DO NOTHING;
+```
+
+Now, navigate to `/admin/login` on the website and sign in. The application and database will verify your record in `admin_users` and grant access to the CMS.
 
 ---
 
-## Storage Bucket Configuration
+## 3. Row Level Security (RLS) Policy Matrix
 
-The migration automatically creates and configures the `gallery` bucket with:
-- **Public read access** (for displaying trip photographs to visitors).
-- **Authenticated admin write access** (only logged-in admins can upload, replace, or delete files).
-- Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
-- Max upload size: 8 MB.
-
----
-
-## Row Level Security (RLS) Summary
-
-| Table | Anonymous / Public Visitor | Authenticated Admin |
-| :--- | :--- | :--- |
-| `site_settings` | SELECT (Read-only) | SELECT, INSERT, UPDATE, DELETE |
-| `destinations` | SELECT (Published only) | Full Access (Drafts & Published) |
-| `journey_days` | SELECT (Published only) | Full Access |
-| `activities` | SELECT (Read-only) | Full Access |
-| `media` | SELECT (Published only) | Full Access |
-| `people` | SELECT (Published only) | Full Access |
-| `memories` | SELECT (Approved only) & INSERT (Pending only) | Full Access (Moderate & Delete) |
-| `guestbook_entries` | SELECT (Approved only) & INSERT | Full Access |
-| `storage.objects` (`gallery`) | SELECT (Public URL read) | INSERT, UPDATE, DELETE |
+| Table | Anonymous Visitor | Ordinary Authenticated User | Verified Admin (`admin_users`) |
+| :--- | :--- | :--- | :--- |
+| `site_settings` | SELECT | SELECT | Full Access (ALL) |
+| `destinations` | SELECT (Published only) | SELECT (Published only) | Full Access (ALL + Drafts) |
+| `journey_days` | SELECT (Published only) | SELECT (Published only) | Full Access (ALL + Drafts) |
+| `activities` | SELECT | SELECT | Full Access (ALL) |
+| `media` | SELECT (Published only) | SELECT (Published only) | Full Access (ALL + Drafts) |
+| `people` | SELECT (Published only) | SELECT (Published only) | Full Access (ALL + Drafts) |
+| `memories` | SELECT (Approved only) & INSERT (`pending` only) | SELECT (Approved only) & INSERT (`pending` only) | Full Access (Approve, Reject, Delete) |
+| `guestbook_entries` | SELECT (Approved only) & INSERT (`pending` only) | SELECT (Approved only) & INSERT (`pending` only) | Full Access (ALL) |
+| `admin_users` | No access | View own role only | View & Manage Admins |
+| `storage.objects` (`gallery`) | SELECT (Public URL) | SELECT (Public URL) | Upload, Update, Delete |
