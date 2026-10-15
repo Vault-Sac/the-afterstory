@@ -253,9 +253,8 @@ describe('THE AFTERSTORY — Security, Schema & Authorization Audit', () => {
     assert.match(submissionsAdminCode, /Unauthorized/i)
   })
 
-  test('SUBMISSIONS: Public form requires full_name and photo before submitting', () => {
+  test('SUBMISSIONS: Public form requires full_name and consent before submitting', () => {
     assert.match(submitProfileCode, /Please enter your full name/i)
-    assert.match(submitProfileCode, /Please select a photograph/i)
     assert.match(submitProfileCode, /Please confirm your consent/i)
   })
 

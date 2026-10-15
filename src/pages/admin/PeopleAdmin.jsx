@@ -133,13 +133,6 @@ export default function PeopleAdmin() {
           {people.map((p, idx) => (
             <div className="admin-person-card" key={p.id || p.slug || idx}>
               <div className="admin-person-top">
-                <div className={`admin-avatar avatar-${idx % 5}`}>
-                  {p.avatar_url ? (
-                    <img src={p.avatar_url} alt={p.full_name || p.name} />
-                  ) : (
-                    <span>{(p.full_name || p.name || '?')[0].toUpperCase()}</span>
-                  )}
-                </div>
                 <div className="admin-person-meta">
                   <h3>{p.full_name || p.name}</h3>
                   <span className="role-tag">{p.role_titile || p.role_title || p.line || 'Traveler'}</span>
@@ -238,16 +231,6 @@ export default function PeopleAdmin() {
                     value={editingPerson.nickname || ''}
                     onChange={e => setEditingPerson({ ...editingPerson, nickname: e.target.value })}
                     placeholder="e.g. Captain"
-                    disabled={saving}
-                  />
-                </label>
-                <label>
-                  AVATAR / PHOTO URL (optional)
-                  <input
-                    type="url"
-                    value={editingPerson.avatar_url || ''}
-                    onChange={e => setEditingPerson({ ...editingPerson, avatar_url: e.target.value })}
-                    placeholder="https://..."
                     disabled={saving}
                   />
                 </label>
