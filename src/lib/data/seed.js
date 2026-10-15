@@ -224,7 +224,19 @@ export const seedMemories = [
   },
 ]
 
-export const seedPeople = []
+export const seedPeople = [
+  {
+    id: 'seed-person-1',
+    slug: 'megha',
+    full_name: 'Megha Sharma',
+    nickname: 'Megha',
+    role_titile: 'Lead Navigator',
+    favourite_quote: 'Let us keep going.',
+    bio: 'Travel companion capturing the spirit and moments of our journey.',
+    status: 'published',
+    display_order: 1,
+  },
+]
 
 export const seedGallery = [
   { id: 'g1', title: 'Somewhere between here and there', place: 'On the Way', image: 'https://images.unsplash.com/photo-1474487548417-781cb71495f3?auto=format&fit=crop&w=900&q=85', tag: 'EN ROUTE', destination_id: 'varanasi' },

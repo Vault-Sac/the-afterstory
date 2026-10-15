@@ -55,20 +55,6 @@ export default function People() {
                 return (
                   <article className="person-editorial-card theme-paper" key={person.id || person.slug || i}>
                     <div className="person-card-top">
-                      <div className="person-portrait-frame" aria-hidden="true">
-                        {person.avatar_url || person.profile_image ? (
-                          <img
-                            src={person.avatar_url || person.profile_image}
-                            alt={name}
-                            className="person-portrait"
-                          />
-                        ) : (
-                          <span className="person-initials">
-                            {name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-
                       <div className="person-title-area">
                         <h2 className="person-full-name">{name}</h2>
                         <span className="person-role-tag">{role}</span>
