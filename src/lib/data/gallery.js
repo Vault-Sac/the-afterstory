@@ -3,21 +3,24 @@ import { seedGallery } from './seed'
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const MAX_UPLOAD_MB = 8
-
 const STORAGE_KEY = 'mv_admin_gallery'
 
 function getLocalGallery() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error reading local gallery:', e)
+  }
   return seedGallery
 }
 
 function saveLocalGallery(list) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error saving local gallery:', e)
+  }
 }
 
 export async function getGalleryMedia({ destinationId, dayId, limit = 100 } = {}) {
@@ -27,39 +30,60 @@ export async function getGalleryMedia({ destinationId, dayId, limit = 100 } = {}
     if (dayId) list = list.filter(m => m.journey_day_id === dayId)
     return { data: list.slice(0, limit), error: null }
   }
-  let query = supabase
-    .from('media')
-    .select('*')
-    .eq('publication_status', 'published')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (destinationId) query = query.eq('destination_id', destinationId)
-  if (dayId) query = query.eq('journey_day_id', dayId)
-  return await query
+  try {
+    let query = supabase
+      .from('media')
+      .select('*')
+      .eq('publication_status', 'published')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (destinationId) query = query.eq('destination_id', destinationId)
+    if (dayId) query = query.eq('journey_day_id', dayId)
+
+    const { data, error } = await query
+    if (error || !data || data.length === 0) {
+      let fallback = seedGallery
+      if (destinationId) fallback = fallback.filter(m => m.destination_id === destinationId)
+      return { data: (data && data.length > 0) ? data : fallback, error }
+    }
+    return { data, error: null }
+  } catch (err) {
+    return { data: seedGallery, error: err }
+  }
 }
 
 export async function getAllMediaAdmin() {
   if (!isSupabaseConfigured) {
     return { data: getLocalGallery(), error: null }
   }
-  return await supabase
-    .from('media')
-    .select('*')
-    .order('created_at', { ascending: false })
+  try {
+    const { data, error } = await supabase
+      .from('media')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error || !data || data.length === 0) {
+      return { data: (data && data.length > 0) ? data : seedGallery, error }
+    }
+    return { data, error: null }
+  } catch (err) {
+    return { data: seedGallery, error: err }
+  }
 }
 
 export async function uploadMediaAdmin(file, metadata = {}) {
   // Validate MIME type
   if (!ALLOWED_MIME.includes(file.type)) {
-    return { data: null, error: new Error('File type not allowed. Use JPEG, PNG, WebP or GIF.') }
+    return { data: null, error: new Error('File type not allowed. Please use JPEG, PNG, WebP or GIF.') }
   }
   // Validate size
   if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-    return { data: null, error: new Error(`File too large. Maximum size is ${MAX_UPLOAD_MB} MB.`) }
+    return { data: null, error: new Error(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed is ${MAX_UPLOAD_MB}MB.`) }
   }
 
   if (!isSupabaseConfigured) {
-    // In demo mode: read as Data URL or ObjectURL
+    // Demo mode: read as Data URL
     const dataUrl = await new Promise((res, rej) => {
       const reader = new FileReader()
       reader.onload = () => res(reader.result)
@@ -85,28 +109,43 @@ export async function uploadMediaAdmin(file, metadata = {}) {
     return { data: record, error: null }
   }
 
-  const ext = file.name.split('.').pop()
-  const path = `gallery/${Date.now()}-${crypto.randomUUID()}.${ext}`
+  try {
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const fileName = `${Date.now()}-${crypto.randomUUID()}.${fileExt}`
+    const path = `photos/${fileName}`
 
-  const { error: uploadError } = await supabase.storage.from('gallery').upload(path, file)
-  if (uploadError) return { data: null, error: uploadError }
+    const { error: uploadError } = await supabase.storage
+      .from('gallery')
+      .upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+      })
 
-  const { data: urlData } = supabase.storage.from('gallery').getPublicUrl(path)
-  const publicUrl = urlData?.publicUrl
+    if (uploadError) {
+      return { data: null, error: new Error(`Storage upload failed: ${uploadError.message}`) }
+    }
 
-  const record = {
-    storage_path: path,
-    public_url: publicUrl,
-    media_type: file.type.startsWith('video') ? 'video' : 'image',
-    caption: metadata.caption || '',
-    alt_text: metadata.alt_text || file.name,
-    destination_id: metadata.destination_id || null,
-    journey_day_id: metadata.journey_day_id || null,
-    publication_status: 'published',
+    const { data: urlData } = supabase.storage.from('gallery').getPublicUrl(path)
+    const publicUrl = urlData?.publicUrl
+
+    const record = {
+      storage_path: path,
+      public_url: publicUrl,
+      media_type: file.type.startsWith('video') ? 'video' : 'image',
+      caption: metadata.caption || '',
+      alt_text: metadata.alt_text || file.name,
+      destination_id: metadata.destination_id || null,
+      journey_day_id: metadata.journey_day_id || null,
+      publication_status: 'published',
+      created_at: new Date().toISOString()
+    }
+
+    const { data, error } = await supabase.from('media').insert(record).select().single()
+    return { data, error }
+  } catch (err) {
+    return { data: null, error: err }
   }
-
-  const { data, error } = await supabase.from('media').insert(record).select().single()
-  return { data, error }
 }
 
 export async function updateMediaRecord(id, updates) {
@@ -115,7 +154,11 @@ export async function updateMediaRecord(id, updates) {
     saveLocalGallery(list)
     return { data: list.find(m => m.id === id), error: null }
   }
-  return await supabase.from('media').update(updates).eq('id', id).select().single()
+  try {
+    return await supabase.from('media').update(updates).eq('id', id).select().single()
+  } catch (err) {
+    return { data: null, error: err }
+  }
 }
 
 export async function deleteMediaRecord(id, storagePath) {
@@ -124,7 +167,12 @@ export async function deleteMediaRecord(id, storagePath) {
     saveLocalGallery(list)
     return { error: null }
   }
-  if (storagePath) await supabase.storage.from('gallery').remove([storagePath])
-  return await supabase.from('media').delete().eq('id', id)
+  try {
+    if (storagePath) {
+      await supabase.storage.from('gallery').remove([storagePath]).catch(() => {})
+    }
+    return await supabase.from('media').delete().eq('id', id)
+  } catch (err) {
+    return { error: err }
+  }
 }
-

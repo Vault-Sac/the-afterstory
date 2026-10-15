@@ -7,14 +7,18 @@ function getLocalPeople() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error reading local people:', e)
+  }
   return seedPeople
 }
 
 function saveLocalPeople(list) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error saving local people:', e)
+  }
 }
 
 export async function getPublishedPeople() {
@@ -22,34 +26,65 @@ export async function getPublishedPeople() {
     const list = getLocalPeople().filter(p => p.status === 'published')
     return { data: list, error: null }
   }
-  const { data, error } = await supabase
-    .from('people')
-    .select('*')
-    .eq('status', 'published')
-    .order('display_order', { ascending: true })
-  return { data: data || seedPeople, error }
+  try {
+    const { data, error } = await supabase
+      .from('people')
+      .select('*')
+      .eq('status', 'published')
+      .order('display_order', { ascending: true })
+
+    if (error || !data || data.length === 0) {
+      return { data: (data && data.length > 0) ? data : seedPeople, error }
+    }
+    return { data, error: null }
+  } catch (err) {
+    return { data: seedPeople, error: err }
+  }
 }
 
 export async function getPersonBySlug(slug) {
   if (!isSupabaseConfigured) {
     const list = getLocalPeople()
     const found = list.find(p => p.slug === slug)
-    return { data: found || null, error: null }
+    return { data: found || null, error: found ? null : new Error('Person not found') }
   }
-  const { data, error } = await supabase
-    .from('people')
-    .select('*')
-    .eq('slug', slug)
-    .eq('status', 'published')
-    .single()
-  return { data, error }
+  try {
+    const { data, error } = await supabase
+      .from('people')
+      .select('*')
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .single()
+
+    if (error || !data) {
+      const found = seedPeople.find(p => p.slug === slug)
+      if (found) return { data: found, error: null }
+      return { data: null, error }
+    }
+    return { data, error: null }
+  } catch (err) {
+    const found = seedPeople.find(p => p.slug === slug)
+    return { data: found || null, error: err }
+  }
 }
 
 export async function getAllPeopleAdmin() {
   if (!isSupabaseConfigured) {
     return { data: getLocalPeople(), error: null }
   }
-  return await supabase.from('people').select('*').order('display_order', { ascending: true })
+  try {
+    const { data, error } = await supabase
+      .from('people')
+      .select('*')
+      .order('display_order', { ascending: true })
+
+    if (error || !data || data.length === 0) {
+      return { data: (data && data.length > 0) ? data : seedPeople, error }
+    }
+    return { data, error: null }
+  } catch (err) {
+    return { data: seedPeople, error: err }
+  }
 }
 
 export async function upsertPerson(person) {
@@ -70,12 +105,21 @@ export async function upsertPerson(person) {
     saveLocalPeople(list)
     return { data: item, error: null }
   }
-  const { data, error } = await supabase
-    .from('people')
-    .upsert(person)
-    .select()
-    .single()
-  return { data, error }
+  try {
+    const payload = {
+      ...person,
+      slug: person.slug || person.full_name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || crypto.randomUUID().slice(0, 8),
+      updated_at: new Date().toISOString()
+    }
+    const { data, error } = await supabase
+      .from('people')
+      .upsert(payload)
+      .select()
+      .single()
+    return { data, error }
+  } catch (err) {
+    return { data: null, error: err }
+  }
 }
 
 export async function deletePerson(id) {
@@ -84,6 +128,9 @@ export async function deletePerson(id) {
     saveLocalPeople(list)
     return { error: null }
   }
-  return await supabase.from('people').delete().eq('id', id)
+  try {
+    return await supabase.from('people').delete().eq('id', id)
+  } catch (err) {
+    return { error: err }
+  }
 }
-

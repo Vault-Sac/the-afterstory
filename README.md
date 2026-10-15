@@ -1,65 +1,91 @@
-# The Memory Vault — October 2026
+# THE AFTERSTORY — The Memory Vault
 
-A cinematic scrapbook-style React + Vite + Tailwind CSS starter for the Varanasi → Shimla → Chandigarh journey (15–20 October 2026).
+> *“Some journeys end. Their stories don't.”*
 
-## What's implemented
+A cinematic, multi-page trip journal and shared memory vault designed for the October 2026 expedition from Varanasi through Shimla and Chandigarh. Built with React, Vite, Tailwind CSS, and powered by Supabase.
 
-- Responsive, cinematic landing page and trip countdown (15 Oct 2026, 2:00 PM IST)
-- Six itinerary chapters based on the supplied printed itinerary
-- Clickable route timeline and Google Maps route link
-- Photo archive with search, image lightbox, and local image upload
-- Add-people cards
-- Memory wall / guestbook
-- Export and restore JSON backup
-- Mobile navigation, subtle interaction states, accessible labels and keyboard focus styles
-- Tailwind CSS configured; handcrafted CSS handles the visual design
+---
 
-## Run locally
+## Architecture & Features
 
-Requires Node.js 18+.
+- **Cinematic Editorial Design**: Handcrafted deep pine & warm ivory design tokens, responsive typography, and smooth transitions.
+- **Multi-Page Routing**:
+  - `/`: Home page with live expedition countdown, hero narrative, and curated trip teasers.
+  - `/journey`: Day-by-day expedition route visualizer and chronological chapter stories.
+  - `/destinations/:slug`: Dedicated destination chapters with highlights, travel tips, and associated photography.
+  - `/gallery`: Curated photo archive with location filtering, search, and image lightbox.
+  - `/people`: Companion directory honoring everyone who traveled together.
+  - `/memory-board`: Public digital scrapbook where companions can submit thoughts, quotes, and memories.
+  - `/soundtrack`: Audio and playlist companion page.
+  - `/about`: Archive purpose, privacy, and contribution guidelines.
+- **Protected Admin CMS (`/admin`)**:
+  - Secure dashboard for content managers.
+  - Destinations editor (create, edit, reorder, update hero photography).
+  - Photo archive manager with Supabase Storage uploads.
+  - Memory moderation queue (approve, reject, or delete visitor submissions).
+  - People & companion profiles manager.
+  - Global site settings & JSON backup export.
+- **Dual-Mode Backend Resilience**:
+  - Full Supabase cloud connectivity when environment variables are supplied.
+  - Zero-crash local demo fallback with pre-populated itinerary seed data when running offline or without credentials.
 
+---
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+
+### Installation
 ```bash
+# Clone the repository
+git clone https://github.com/Vault-Sac/Trip-Mmeory-Vault.git
+cd trip-memory-vault
+
+# Install dependencies
 npm install
+
+# Start local development server
 npm run dev
 ```
 
-Open the local URL Vite prints. For a production build:
+---
 
-```bash
-npm run build
-npm run preview
-```
+## Supabase Setup (5 Minutes)
 
-## Important: local demo vs shared vault
+1. Create a project at [supabase.com](https://supabase.com).
+2. Go to your project's **SQL Editor**.
+3. Open [`supabase/migrations/20261015000000_create_memory_vault_schema.sql`](./supabase/migrations/20261015000000_create_memory_vault_schema.sql), copy the entire SQL script, paste it into the SQL Editor, and click **Run**.
+   - This creates all 9 tables, indexes, RLS policies, the `gallery` storage bucket, and idempotent initial trip seed data.
+4. In your Supabase Dashboard, go to **Authentication** → **Users** → **Add User** to create an admin account (check "Auto Confirm User").
+5. Copy your project URL and Anon/Publishable Key into `.env`:
+   ```bash
+   VITE_SUPABASE_URL=https://your-project-id.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   ```
 
-This version is a working **front-end prototype**. Notes, people and photos are saved in the current browser's `localStorage`; uploaded photos are stored as browser data URLs. They do **not** automatically sync to other people's devices, and browser storage can be cleared or run out of space. The upload limit is 1.2 MB per image to reduce local-storage failures.
+---
 
-Deploying this prototype to a public URL means anyone with the URL can view the page, but it does **not** create shared cloud storage. Do not enter sensitive/private messages or upload other people's photos without their permission. A URL that can be forwarded is not a strong privacy boundary.
+## Vercel Deployment
 
-## To make it a real shared vault
+This project includes a production-ready `vercel.json` configured with SPA routing rewrites and security headers.
 
-Use Supabase (or an equivalent backend) before inviting the group:
+1. Connect your GitHub repository to [Vercel](https://vercel.com).
+2. In the Vercel project settings under **Environment Variables**, add:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY` (or `VITE_SUPABASE_PUBLISHABLE_KEY`)
+3. Framework Preset: **Vite**
+4. Build Command: `npm run build`
+5. Output Directory: `dist`
+6. Deploy! All routes (`/journey`, `/admin`, `/destinations/:slug`, etc.) will route properly without 404 errors.
 
-1. Create a Supabase project.
-2. Create `memories` table: `id uuid primary key default gen_random_uuid()`, `name text not null`, `message text not null`, `mood text`, `created_at timestamptz default now()`.
-3. Create `people` table: `id uuid primary key default gen_random_uuid()`, `name text not null`, `note text`, `created_at timestamptz default now()`.
-4. Create a private Storage bucket named `trip-photos` for image uploads.
-5. Add Supabase Auth with invite-only access if the vault is intended for the trip group. For an anyone-with-the-link mode, a public write/read policy can be spammed by strangers and should not be used for personal photos or private messages. Prefer a simple access code checked by a server/Edge Function, or invite-only authentication.
-6. Add `@supabase/supabase-js`, put `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`, and replace the localStorage helpers with Supabase reads/writes and Storage upload URLs. Never put a service-role key in frontend code.
-7. Configure Row Level Security policies for the intended access model; test read, write, edit, and delete permissions before publishing.
+---
 
-## Publishing
+## Security Model
 
-The static front end can be published to Vercel, Netlify, or Cloudflare Pages. Build command: `npm run build`; output directory: `dist`. If deploying to a public domain, add a short privacy notice and use only photos that everyone is comfortable sharing.
-
-## Itinerary notes
-
-The supplied itinerary lists:
-- 15 Oct: depart Varanasi by bus for Prayagraj Sangam railway station; overnight train.
-- 16 Oct: arrive Chandigarh, continue to Shimla; Ridge and Mall Road.
-- 17 Oct: Kufri, Apple Garden, short trek, Sankat Mochan Hanuman Temple.
-- 18 Oct: Shimla–Kalka toy train, Pinjore Garden, Chandigarh.
-- 19 Oct: Rock Garden, Rose Garden, shopping sectors, Sukhna Lake; overnight return train.
-- 20 Oct: arrive Varanasi around 2:05 PM.
-
-Some timings/train details in the photograph are hard to read. Verify transport details with the organizer before relying on this as a live itinerary.
+- **Row Level Security (RLS)** is enabled on all tables.
+- Public visitors can only view published content and approved memories.
+- Public visitors can submit memories and guestbook entries, but they are strictly placed into `pending` moderation status.
+- Only authenticated administrators have permissions to modify destinations, upload images, approve/reject memories, or update settings.
+- Private `service_role` keys are never used or bundled in client-side code.
