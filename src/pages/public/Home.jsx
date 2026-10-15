@@ -289,24 +289,29 @@ export default function Home() {
 
           <div className="people-preview-grid">
             {people.length > 0 ? (
-              people.map((person, idx) => (
-                <div key={person.id || idx} className="person-summary-card">
-                  <div className="person-avatar-circle" aria-hidden="true">
-                    {person.avatar_url ? (
-                      <img src={person.avatar_url} alt={person.full_name || person.name} />
-                    ) : (
-                      <span>{(person.full_name || person.name || '?').charAt(0).toUpperCase()}</span>
-                    )}
+              people.map((person, idx) => {
+                const name = person.full_name || person.name || 'Traveler'
+                const role = person.role_titile || person.role_title || person.line || 'Travel Companion'
+                const quote = person.favourite_quote || person.favorite_quote || ''
+                return (
+                  <div key={person.id || person.slug || idx} className="person-summary-card">
+                    <div className="person-avatar-circle" aria-hidden="true">
+                      {person.avatar_url ? (
+                        <img src={person.avatar_url} alt={name} />
+                      ) : (
+                        <span>{name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="person-info">
+                      <h3 className="person-name">{name}</h3>
+                      <span className="person-role">{role}</span>
+                      {quote && (
+                        <p className="person-quote">“{quote}”</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="person-info">
-                    <h3 className="person-name">{person.full_name || person.name}</h3>
-                    <span className="person-role">{person.role_title || person.line || 'Travel Companion'}</span>
-                    {person.favorite_quote && (
-                      <p className="person-quote">“{person.favorite_quote}”</p>
-                    )}
-                  </div>
-                </div>
-              ))
+                )
+              })
             ) : (
               <div className="people-empty-notice">
                 <Users size={28} />

@@ -2,19 +2,24 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { normalizePerson } from '../src/lib/data/people.js'
 
 const projectRoot = path.resolve('.')
 
-describe('THE AFTERSTORY — Security & Authorization Audit', () => {
+describe('THE AFTERSTORY — Security, Schema & Authorization Audit', () => {
   const migrationPath = path.join(projectRoot, 'supabase/migrations/20261015000000_create_memory_vault_schema.sql')
   const authContextPath = path.join(projectRoot, 'src/contexts/AuthContext.jsx')
   const vercelConfigPath = path.join(projectRoot, 'vercel.json')
   const memoriesDataPath = path.join(projectRoot, 'src/lib/data/memories.js')
+  const peopleDataPath = path.join(projectRoot, 'src/lib/data/people.js')
+  const peopleAdminPath = path.join(projectRoot, 'src/pages/admin/PeopleAdmin.jsx')
 
   const migrationSql = fs.readFileSync(migrationPath, 'utf8')
   const authContextCode = fs.readFileSync(authContextPath, 'utf8')
   const vercelConfig = JSON.parse(fs.readFileSync(vercelConfigPath, 'utf8'))
   const memoriesCode = fs.readFileSync(memoriesDataPath, 'utf8')
+  const peopleCode = fs.readFileSync(peopleDataPath, 'utf8')
+  const peopleAdminCode = fs.readFileSync(peopleAdminPath, 'utf8')
 
   test('CRITICAL: No table allows unrestricted authenticated modification (USING true)', () => {
     // Assert that no policy grants blanket access simply because a user is authenticated
@@ -107,5 +112,51 @@ describe('THE AFTERSTORY — Security & Authorization Audit', () => {
 
     assert.equal(headerMap['X-Frame-Options'], 'DENY')
     assert.equal(headerMap['X-Content-Type-Options'], 'nosniff')
+  })
+
+  test('SCHEMA AUDIT: People schema uses full_name, role_titile, and favourite_quote', () => {
+    assert.match(migrationSql, /full_name\s+TEXT\s+NOT\s+NULL/i)
+    assert.match(migrationSql, /role_titile\s+TEXT/i)
+    assert.match(migrationSql, /favourite_quote\s+TEXT/i)
+  })
+
+  test('SCHEMA AUDIT: upsertPerson constructs payload with full_name, role_titile, and favourite_quote (NO name or line column)', () => {
+    // Ensure primaryPayload does not contain 'name:' or 'line:' properties
+    assert.match(peopleCode, /full_name:\s*fullName/i)
+    assert.match(peopleCode, /role_titile:\s*role/i)
+    assert.match(peopleCode, /favourite_quote:\s*quote/i)
+
+    // Ensure raw 'name' is not passed directly as a column to supabase upsert
+    assert.doesNotMatch(peopleCode, /primaryPayload\s*=\s*\{[\s\S]*?\bname\s*:/i)
+    assert.doesNotMatch(peopleCode, /primaryPayload\s*=\s*\{[\s\S]*?\bline\s*:/i)
+  })
+
+  test('SCHEMA AUDIT: normalizePerson maps both database columns and legacy UI aliases', () => {
+    const rawDbPerson = {
+      id: 'test-1',
+      slug: 'megha',
+      full_name: 'Megha Sharma',
+      nickname: 'Navigator',
+      role_titile: 'Lead Navigator',
+      favourite_quote: 'Let us keep going.',
+      avatar_url: 'https://example.com/avatar.jpg',
+      bio: 'Traveler and photographer',
+      status: 'published',
+      display_order: 1
+    }
+
+    const normalized = normalizePerson(rawDbPerson)
+    assert.equal(normalized.full_name, 'Megha Sharma')
+    assert.equal(normalized.name, 'Megha Sharma')
+    assert.equal(normalized.role_titile, 'Lead Navigator')
+    assert.equal(normalized.role_title, 'Lead Navigator')
+    assert.equal(normalized.favourite_quote, 'Let us keep going.')
+    assert.equal(normalized.favorite_quote, 'Let us keep going.')
+  })
+
+  test('ADMIN AUDIT: PeopleAdmin checks error and displays failure without reporting false success', () => {
+    assert.match(peopleAdminCode, /const\s*\{\s*data\s*,\s*error\s*\}\s*=\s*await\s+upsertPerson/i)
+    assert.match(peopleAdminCode, /if\s*\(\s*error\s*\)\s*\{[\s\S]*?setFormError/i)
+    assert.match(peopleAdminCode, /disabled=\{\s*saving\s*\}/i)
   })
 })

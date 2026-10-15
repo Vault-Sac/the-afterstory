@@ -98,14 +98,13 @@ CREATE TABLE IF NOT EXISTS public.people (
     slug TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     nickname TEXT,
-    role_title TEXT,
+    role_titile TEXT,
     avatar_url TEXT,
-    favorite_quote TEXT,
+    favourite_quote TEXT,
     bio TEXT,
     status TEXT DEFAULT 'published' CHECK (status IN ('draft', 'published', 'archived')),
     display_order INTEGER DEFAULT 1,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ------------------------------------------------------------------------------

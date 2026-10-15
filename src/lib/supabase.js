@@ -4,10 +4,11 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 
-               import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 
-               import.meta.env.VITE_SUPABASE_KEY || ''
+const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (typeof process !== 'undefined' ? process.env : {})
+const rawUrl = env?.VITE_SUPABASE_URL || ''
+const rawKey = env?.VITE_SUPABASE_ANON_KEY || 
+               env?.VITE_SUPABASE_PUBLISHABLE_KEY || 
+               env?.VITE_SUPABASE_KEY || ''
 
 // Check whether a valid Supabase project is configured
 function checkConfigured(url, key) {
