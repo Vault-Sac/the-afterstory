@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   LockKeyhole, LayoutDashboard, MapPin, Image, Users,
-  MessageSquare, FileText, Settings, LogOut, Menu, X, BookOpen, Globe
+  MessageSquare, FileText, Settings, LogOut, Menu, X, BookOpen, Globe, Camera
 } from 'lucide-react'
 
 const adminNav = [
@@ -12,6 +12,7 @@ const adminNav = [
   { to: '/admin/destinations', label: 'Destinations', icon: MapPin },
   { to: '/admin/gallery', label: 'Gallery', icon: Image },
   { to: '/admin/people', label: 'People', icon: Users },
+  { to: '/admin/submissions', label: 'Photo Submissions', icon: Camera },
   { to: '/admin/memories', label: 'Memories', icon: MessageSquare },
   { to: '/admin/pages', label: 'Pages', icon: FileText },
   { to: '/admin/settings', label: 'Settings', icon: Settings },

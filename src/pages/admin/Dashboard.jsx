@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MapPin, Image, MessageSquare, Users, Clock, CheckCircle, AlertCircle, FileText } from 'lucide-react'
+import { MapPin, Image, MessageSquare, Users, Clock, CheckCircle, AlertCircle, FileText, Camera } from 'lucide-react'
 import { getAllMemoriesAdmin } from '../../lib/data/memories'
 import { getAllDestinationsAdmin } from '../../lib/data/destinations'
 import { getAllMediaAdmin } from '../../lib/data/gallery'
 import { getAllPeopleAdmin } from '../../lib/data/people'
+import { getAllSubmissionsAdmin } from '../../lib/data/submissions'
 import { destinations, journeyDays } from '../../lib/data/seed'
 
 function StatCard({ icon: Icon, label, value, sub, to, color }) {
@@ -22,7 +23,7 @@ function StatCard({ icon: Icon, label, value, sub, to, color }) {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState({ memories: 0, pending: 0, destinations: 0, media: 0, people: 0 })
+  const [stats, setStats] = useState({ memories: 0, pending: 0, destinations: 0, media: 0, people: 0, pendingSubmissions: 0 })
   const [recentMemories, setRecentMemories] = useState([])
 
   useEffect(() => {
@@ -31,14 +32,17 @@ export default function AdminDashboard() {
       getAllDestinationsAdmin(),
       getAllMediaAdmin(),
       getAllPeopleAdmin(),
-    ]).then(([memRes, destRes, mediaRes, peopleRes]) => {
+      getAllSubmissionsAdmin({ status: 'pending' }),
+    ]).then(([memRes, destRes, mediaRes, peopleRes, subRes]) => {
       const mems = memRes.data || []
+      const subs = subRes.data || []
       setStats({
         memories: mems.filter(m => m.moderation_status === 'approved').length,
         pending: mems.filter(m => m.moderation_status === 'pending').length,
         destinations: (destRes.data || destinations).filter(d => d.status === 'published').length,
         media: (mediaRes.data || []).length,
         people: (peopleRes.data || []).filter(p => p.status === 'published').length,
+        pendingSubmissions: subs.length,
       })
       setRecentMemories(mems.filter(m => m.moderation_status === 'pending').slice(0, 5))
     })
@@ -56,8 +60,9 @@ export default function AdminDashboard() {
         <StatCard icon={MapPin} label="Published Destinations" value={stats.destinations} color="#5C7A5A" to="/admin/destinations" />
         <StatCard icon={Image} label="Gallery Items" value={stats.media} color="#4A6B8A" to="/admin/gallery" />
         <StatCard icon={MessageSquare} label="Approved Memories" value={stats.memories} color="#7A6B3D" to="/admin/memories" />
-        <StatCard icon={AlertCircle} label="Pending Review" value={stats.pending} color="#8A4A4A" to="/admin/memories?status=pending" sub={stats.pending > 0 ? "Needs attention" : ""} />
+        <StatCard icon={AlertCircle} label="Pending Memories" value={stats.pending} color="#8A4A4A" to="/admin/memories?status=pending" sub={stats.pending > 0 ? "Needs attention" : ""} />
         <StatCard icon={Users} label="Published People" value={stats.people} color="#6B4A8A" to="/admin/people" />
+        <StatCard icon={Camera} label="Photo Submissions" value={stats.pendingSubmissions} color="#4A7A8A" to="/admin/submissions" sub={stats.pendingSubmissions > 0 ? "Needs review" : "All reviewed"} />
         <StatCard icon={FileText} label="Journey Days" value={journeyDays.length} color="#6B7A4A" to="/admin/journey" />
       </div>
 
@@ -98,6 +103,7 @@ export default function AdminDashboard() {
         <div className="quick-links">
           <Link to="/admin/destinations" className="quick-link"><MapPin size={15}/> Manage Destinations</Link>
           <Link to="/admin/gallery" className="quick-link"><Image size={15}/> Upload Photos</Link>
+          <Link to="/admin/submissions" className="quick-link"><Camera size={15}/> Photo Submissions</Link>
           <Link to="/admin/memories?status=pending" className="quick-link"><MessageSquare size={15}/> Moderate Memories</Link>
           <Link to="/admin/people" className="quick-link"><Users size={15}/> Add People</Link>
           <Link to="/admin/pages" className="quick-link"><FileText size={15}/> Edit Pages</Link>

@@ -12,6 +12,7 @@ import Journey from './pages/public/Journey'
 import DestinationPage from './pages/public/DestinationPage'
 import Gallery from './pages/public/Gallery'
 import People from './pages/public/People'
+import SubmitProfile from './pages/public/SubmitProfile'
 import MemoryBoard from './pages/public/MemoryBoard'
 import Soundtrack from './pages/public/Soundtrack'
 import About from './pages/public/About'
@@ -23,6 +24,7 @@ import JourneyAdmin from './pages/admin/JourneyAdmin'
 import DestinationsAdmin from './pages/admin/DestinationsAdmin'
 import GalleryAdmin from './pages/admin/GalleryAdmin'
 import PeopleAdmin from './pages/admin/PeopleAdmin'
+import SubmissionsAdmin from './pages/admin/SubmissionsAdmin'
 import MemoriesAdmin from './pages/admin/MemoriesAdmin'
 import PagesAdmin from './pages/admin/PagesAdmin'
 import AdminSettings from './pages/admin/Settings'
@@ -68,6 +70,7 @@ function App() {
             <Route path="destinations/:slug" element={<DestinationPage />} />
             <Route path="gallery" element={<Gallery />} />
             <Route path="people" element={<People />} />
+            <Route path="submit-your-story" element={<SubmitProfile />} />
             <Route path="memory-board" element={<MemoryBoard />} />
             <Route path="soundtrack" element={<Soundtrack />} />
             <Route path="about" element={<About />} />
@@ -91,6 +94,7 @@ function App() {
             <Route path="destinations" element={<DestinationsAdmin />} />
             <Route path="gallery" element={<GalleryAdmin />} />
             <Route path="people" element={<PeopleAdmin />} />
+            <Route path="submissions" element={<SubmissionsAdmin />} />
             <Route path="memories" element={<MemoriesAdmin />} />
             <Route path="pages" element={<PagesAdmin />} />
             <Route path="settings" element={<AdminSettings />} />

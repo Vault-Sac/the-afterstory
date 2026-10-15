@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Heart, ArrowRight } from 'lucide-react'
+import { Users, Heart, ArrowRight, Upload } from 'lucide-react'
 import { getPublishedPeople } from '../../lib/data/people'
 import { seedPeople } from '../../lib/data/seed'
 import { LoadingState } from '../../components/public/UIStates'
@@ -31,8 +31,12 @@ export default function People() {
           <p className="people-page-desc">
             Every trip has its places. The reason we remember them is the people standing beside us.
           </p>
+          <Link to="/submit-your-story" className="button button-brass people-submit-cta">
+            <Upload size={14} aria-hidden="true" /> Share Your Story
+          </Link>
         </div>
       </header>
+
 
       {/* People Grid */}
       <main className="people-grid-section theme-ivory" aria-label="People directory">
