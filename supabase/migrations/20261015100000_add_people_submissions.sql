@@ -246,6 +246,17 @@ CREATE POLICY "Admins can delete submission photos" ON storage.objects
         public.is_admin(auth.uid())
     );
 
+-- ------------------------------------------------------------------------------
+-- 6. PERMISSIONS & SCHEMA CACHE RELOAD
+-- ------------------------------------------------------------------------------
+GRANT INSERT ON TABLE public.people_submissions TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.people_submissions TO authenticated;
+GRANT ALL ON TABLE public.people_submissions TO service_role;
+
+-- Notify PostgREST to refresh its schema cache immediately
+NOTIFY pgrst, 'reload schema';
+
 -- ==============================================================================
 -- END OF MIGRATION 20261015100000
 -- ==============================================================================
+
